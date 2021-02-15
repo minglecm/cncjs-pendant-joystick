@@ -1,7 +1,4 @@
-# cncjs-pendant-boilerplate
-A bare minimum example to develop a cncjs pendant.
-
-![image](https://cloud.githubusercontent.com/assets/447801/22881387/2b60de08-f221-11e6-9372-288e118788a9.png)
+# cncjs-pendant-joystick
 
 ## Installation
 ```
@@ -9,8 +6,8 @@ npm install
 ```
 
 ## Usage
-Run `bin/cncjs-pendant-boilerplate` to start the interactive client. Pass --help to `cncjs-pendant-boilerplate` for more options.
+Run `bin/cncjs-pendant-joystick`.
 
 ```
-bin/cncjs-pendant-boilerplate --help
+CNCJS_SECRET=$(cat /home/pi/.cncjs/cncrc.cfg | jq -r '.secret') bin/cncjs-pendant-joystick
 ```

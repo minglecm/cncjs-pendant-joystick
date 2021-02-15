@@ -1,13 +1,13 @@
 {
-  "name": "cncjs-pendant-boilerplate",
+  "name": "cncjs-pendant-joystick",
   "version": "0.1.0",
-  "description": "A bare minimum example to develop a cncjs pendant.",
+  "description": "Control cncjs with a gaming joystick",
   "main": "./index.js",
   "engines": {
     "node": ">=4"
   },
   "bin": {
-    "cncjs-pendant-boilerplate": "./bin/cncjs-pendant-boilerplate"
+    "cncjs-pendant-joystick": "./bin/cncjs-pendant-joystick"
   },
   "preferGlobal": true,
   "scripts": {
@@ -15,19 +15,18 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/cncjs/cncjs-pendant-boilerplate.git"
+    "url": "git+https://github.com/minglecm/cncjs-pendant-joystick.git"
   },
   "keywords": [
     "cncjs",
-    "pendant",
-    "boilerplate"
+    "pendant"
   ],
-  "author": "Cheton Wu <cheton@gmail.com>",
+  "author": "Caleb Mingle <caleb@mingle.cm>",
   "license": "MIT",
   "bugs": {
-    "url": "https://github.com/cncjs/cncjs-pendant-boilerplate/issues"
+    "url": "https://github.com/minglecm/cncjs-pendant-joystick/issues"
   },
-  "homepage": "https://github.com/cncjs/cncjs-pendant-boilerplate#readme",
+  "homepage": "https://github.com/minglecm/cncjs-pendant-joystick#readme",
   "dependencies": {
     "commander": "^5.0.0-4",
     "inquirer": "^7.3.3",
