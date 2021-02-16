@@ -1,12 +1,15 @@
 #!/usr/bin/env node
 
 var fs = require('fs');
+var HID = require('node-hid');
 var path = require('path');
 var program = require('commander');
 var serialport = require('serialport');
 var inquirer = require('inquirer');
+
 var pkg = require('../package.json');
 var serverMain = require('../index');
+
 var options = {};
 
 program
@@ -55,6 +58,67 @@ var store = {
     }
 };
 
+function getDirection(controllerData) {
+    var d1 = controllerData[0];
+    var d2 = controllerData[1];
+
+    // n: d1=127, d2=0
+    // c: d1=127, d2=127
+    // s: d1=127, d2=255
+
+    // w: d1=0, d2=127
+    // nw: d1=0, d2=0
+    // sw: d1=0, d2=255
+
+    // e: d1=255, d2=127
+    // ne: d1=255, d2=0
+    // se: d1=255, d2=255
+
+    if(d1 == 127) {
+        if(d2 == 0) {
+            return "north"
+        }
+
+        if(d2 == 127) {
+            return "center"
+        }
+
+        if(d2 == 255) {
+            return "south"
+        }
+    }
+
+    if(d1 == 0) {
+        if(d2 == 0) {
+            return "northwest"
+        }
+
+        if(d2 == 127) {
+            return "west"
+        }
+
+        if(d2 == 255) {
+            return "southwest"
+        }
+    }
+
+    if(d1 == 255) {
+        if(d2 == 0) {
+            return "northeast"
+        }
+
+        if(d2 == 127) {
+            return "east"
+        }
+
+        if(d2 == 255) {
+            return "southeast"
+        }
+    }
+
+    return "unknown"
+}
+
 var createServer = function(options) {
     serverMain(options, function(err, socket) {
         // Grbl
@@ -86,7 +150,81 @@ var createServer = function(options) {
             store.sender.status = data;
         });
 
-        console.log('hey');
+        console.log('finding joystick device');
+
+        var devices = HID.devices();
+
+        var deviceInfo = devices.find(function(device) {
+            return device.product.toLowerCase().includes("joystick");
+        });
+
+        console.log('connecting to joystick device');
+
+        var device = new HID.HID(deviceInfo.path);
+
+        const DEBOUNCE_MS = 100;
+        const MOVE_DISTANCE = 15;
+
+        var currentDirection = null;
+        var debounceTimeout = null;
+
+        console.log('waiting on joystick data');
+
+        device.on("data", function(data) {
+            var controllerData = data.toJSON().data;
+            var newDirection = getDirection(controllerData);
+
+            if(newDirection !== currentDirection) {
+                currentDirection = newDirection
+
+                if(debounceTimeout == null) {
+                    debounceTimeout = setTimeout(function() {
+                        console.log(currentDirection);
+
+                        var moveDistance = MOVE_DISTANCE;
+
+                        switch (currentDirection) {
+                            case "north":
+                                socket.emit("write", options.port, "G91 Y" + moveDistance + ";\n");
+                                break;
+
+                            case "south":
+                                socket.emit("write", options.port, "G91 Y-" + moveDistance + ";\n");
+                                break;
+
+                            case "east":
+                                socket.emit("write", options.port, "G91 X" + moveDistance + ";\n");
+                                break;
+
+                            case "west":
+                                socket.emit("write", options.port, "G91 X-" + moveDistance + ";\n");
+                                break;
+
+                            case "northeast":
+                                socket.emit("write", options.port, "G91 X" + moveDistance + " Y" + moveDistance + ";\n");
+                                break;
+
+                            case "northwest":
+                                socket.emit("write", options.port, "G91 X-" + moveDistance + " Y" + moveDistance + ";\n");
+                                break;
+
+                            case "southeast":
+                                socket.emit("write", options.port, "G91 X" + moveDistance + " Y-" + moveDistance + ";\n");
+                                break;
+
+                            case "southwest":
+                                socket.emit("write", options.port, "G91 X-" + moveDistance + " Y-" + moveDistance + ";\n");
+                                break;
+
+                            default:
+                                break;
+                        }
+
+                        debounceTimeout = null;
+                    }, DEBOUNCE_MS)
+                }
+            }
+        });
     });
 };
 
