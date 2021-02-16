@@ -164,9 +164,11 @@ var createServer = function(options) {
 
         const DEBOUNCE_MS = 100;
         const MOVE_DISTANCE = 15;
+        const SMOOTH = true;
 
         var currentDirection = null;
         var debounceTimeout = null;
+        var smoothJogInterval = null;
 
         console.log('waiting on joystick data');
 
@@ -181,43 +183,126 @@ var createServer = function(options) {
                     debounceTimeout = setTimeout(function() {
                         console.log(currentDirection);
 
-                        var moveDistance = MOVE_DISTANCE;
+                        if(SMOOTH) {
+                            const jogSpeed = 1000; // MM/min
+                            const jogStep = 50; // Unit step for continuous jog in MM
+                            const jogCommandInterval = 200; // period in ms at which the $J jogging commands are sent to the machine
 
-                        switch (currentDirection) {
-                            case "north":
-                                socket.emit("write", options.port, "G91 Y" + moveDistance + ";\n");
-                                break;
+                            var smoothJog = function(...selectedAxis) {
+                                var axisString = selectedAxis.map(axis => axis + jogStep).join(" ")
 
-                            case "south":
-                                socket.emit("write", options.port, "G91 Y-" + moveDistance + ";\n");
-                                break;
+                                socket.emit('write', options.port, "$J=G91 G21 " + axisString + " F"+ jogSpeed + ";\n")
+                            }
 
-                            case "east":
-                                socket.emit("write", options.port, "G91 X" + moveDistance + ";\n");
-                                break;
+                            var stopSmoothJogging = function() {
+                                if(smoothJogInterval) {
+                                    clearInterval(smoothJogInterval);
+                                    smoothJogInterval = null;
 
-                            case "west":
-                                socket.emit("write", options.port, "G91 X-" + moveDistance + ";\n");
-                                break;
+                                    socket.emit('write', options.port, "\x85\n")
 
-                            case "northeast":
-                                socket.emit("write", options.port, "G91 X" + moveDistance + " Y" + moveDistance + ";\n");
-                                break;
+                                    console.log("smooth jogging stopped")
+                                }
+                            }
 
-                            case "northwest":
-                                socket.emit("write", options.port, "G91 X-" + moveDistance + " Y" + moveDistance + ";\n");
-                                break;
+                            var startSmoothJogging = function(...selectedAxis) {
+                                stopSmoothJogging();
 
-                            case "southeast":
-                                socket.emit("write", options.port, "G91 X" + moveDistance + " Y-" + moveDistance + ";\n");
-                                break;
+                                smoothJog.apply(null, selectedAxis);
 
-                            case "southwest":
-                                socket.emit("write", options.port, "G91 X-" + moveDistance + " Y-" + moveDistance + ";\n");
-                                break;
+                                smoothJogInterval = setInterval(function() {
+                                    smoothJog.apply(null, selectedAxis);
+                                }, jogCommandInterval);
+                            }
 
-                            default:
-                                break;
+                            switch (currentDirection) {
+                                case "center":
+                                    if(smoothJogInterval) {
+                                        clearInterval(smoothJogInterval);
+                                        smoothJogInterval = null;
+
+                                        socket.emit('write', options.port, "\x85;\n")
+
+                                        console.log("smooth jogging stopped")
+                                    }
+
+                                    break;
+
+                                case "north":
+                                    startSmoothJogging("Y")
+                                    break;
+
+                                case "south":
+                                    startSmoothJogging("Y-")
+                                    break;
+
+                                case "east":
+                                    startSmoothJogging("X")
+                                    break;
+
+                                case "west":
+                                    startSmoothJogging("X-")
+                                    break;
+
+                                case "northeast":
+                                    startSmoothJogging("X", "Y")
+                                    break;
+
+                                case "northwest":
+                                    startSmoothJogging("X-", "Y")
+                                    break;
+
+                                case "southeast":
+                                    startSmoothJogging("X", "Y-")
+                                    break;
+
+                                case "southwest":
+                                    startSmoothJogging("X-", "Y-")
+                                    break;
+
+                                default:
+                                    break;
+                            }
+
+                        } else {
+                            var moveDistance = MOVE_DISTANCE;
+
+                            switch (currentDirection) {
+                                case "north":
+                                    socket.emit("write", options.port, "G91 Y" + moveDistance + ";\n");
+                                    break;
+
+                                case "south":
+                                    socket.emit("write", options.port, "G91 Y-" + moveDistance + ";\n");
+                                    break;
+
+                                case "east":
+                                    socket.emit("write", options.port, "G91 X" + moveDistance + ";\n");
+                                    break;
+
+                                case "west":
+                                    socket.emit("write", options.port, "G91 X-" + moveDistance + ";\n");
+                                    break;
+
+                                case "northeast":
+                                    socket.emit("write", options.port, "G91 X" + moveDistance + " Y" + moveDistance + ";\n");
+                                    break;
+
+                                case "northwest":
+                                    socket.emit("write", options.port, "G91 X-" + moveDistance + " Y" + moveDistance + ";\n");
+                                    break;
+
+                                case "southeast":
+                                    socket.emit("write", options.port, "G91 X" + moveDistance + " Y-" + moveDistance + ";\n");
+                                    break;
+
+                                case "southwest":
+                                    socket.emit("write", options.port, "G91 X-" + moveDistance + " Y-" + moveDistance + ";\n");
+                                    break;
+
+                                default:
+                                    break;
+                            }
                         }
 
                         debounceTimeout = null;
