@@ -58,6 +58,36 @@ var store = {
     }
 };
 
+function getButton(buttonData) {
+    // axisToggleButton
+    const axisToggleButton = 128; // button1
+
+    // speedButtons
+    const speedButtonX = 64; // button2
+    const speedButtonX10 = 32; // button3
+    const speedButtonX100 = 16; // button4
+    const speedButtonX1000 = 8; // button5
+
+    switch(buttonData) {
+        case axisToggleButton:
+            return "axisToggle"
+
+        case speedButtonX:
+            return "speedButtonX"
+
+        case speedButtonX10:
+            return "speedButtonX10"
+
+        case speedButtonX100:
+            return "speedButtonX100"
+
+        case speedButtonX1000:
+            return "speedButtonX1000"
+    }
+
+    return "unknown"
+}
+
 function getDirection(controllerData) {
     var d1 = controllerData[0];
     var d2 = controllerData[1];
@@ -165,17 +195,90 @@ var createServer = function(options) {
         const DEBOUNCE_MS = 100;
         const MOVE_DISTANCE = 15;
         const SMOOTH = true;
+        const SMOOTH_JOG_SPEED_X = 10; // MM/min
+        const SMOOTH_JOG_SPEED_X10 = 100; // MM/min
+        const SMOOTH_JOG_SPEED_X100 = 1000; // MM/min
+        const SMOOTH_JOG_SPEED_X1000 = 5000; // MM/min
+        const SMOOTH_JOG_STEP = 50; // Unit step for continuous jog in MM
+        const SMOOTH_JOG_COMMAND_INTERVAL = 200; // period in ms at which the $J jogging commands are sent to the machine
+        const SMOOTH_JOG_STOP_DELAY = 100;
 
+        var currentAxis = "xy";
+        var currentButtonPressed = null;
         var currentDirection = null;
+        var currentJogSpeed = SMOOTH_JOG_SPEED_X;
         var debounceTimeout = null;
         var smoothJogInterval = null;
+        var smoothJogLocked = false;
+
+        var toggleAxis = function() {
+            if(currentAxis == "xy") {
+                currentAxis = "z";
+                return
+            } else {
+                currentAxis = "xy";
+            }
+        }
 
         console.log('waiting on joystick data');
 
         device.on("data", function(data) {
             var controllerData = data.toJSON().data;
-            var newDirection = getDirection(controllerData);
+            var buttonData = controllerData[6];
 
+            if(buttonData === 0) {
+                currentButtonPressed = null;
+            } else {
+                var newButtonPressed = getButton(buttonData);
+
+                if(newButtonPressed != currentButtonPressed) {
+                    currentButtonPressed = newButtonPressed;
+
+                    switch(currentButtonPressed) {
+                        case "axisToggle":
+                            console.log("axisToggle pressed")
+
+                            toggleAxis()
+
+                            break;
+
+                        case "speedButtonX":
+                            console.log("speedButtonX pressed")
+
+                            currentJogSpeed = SMOOTH_JOG_SPEED_X;
+
+                            break;
+
+                        case "speedButtonX10":
+                            console.log("speedButtonX10 pressed")
+
+                            currentJogSpeed = SMOOTH_JOG_SPEED_X10;
+
+                            break;
+
+                        case "speedButtonX100":
+                            console.log("speedButtonX100 pressed")
+
+                            currentJogSpeed = SMOOTH_JOG_SPEED_X100;
+
+                            break;
+
+                        case "speedButtonX1000":
+                            console.log("speedButtonX1000 pressed")
+
+                            currentJogSpeed = SMOOTH_JOG_SPEED_X1000;
+
+                            break;
+
+                        default:
+                            console.log("unknown", buttonData)
+
+                            break;
+                    }
+                }
+            }
+
+            var newDirection = getDirection(controllerData);
             if(newDirection !== currentDirection) {
                 currentDirection = newDirection
 
@@ -184,86 +287,122 @@ var createServer = function(options) {
                         console.log(currentDirection);
 
                         if(SMOOTH) {
-                            const jogSpeed = 1000; // MM/min
-                            const jogStep = 50; // Unit step for continuous jog in MM
-                            const jogCommandInterval = 200; // period in ms at which the $J jogging commands are sent to the machine
-
                             var smoothJog = function(...selectedAxis) {
-                                var axisString = selectedAxis.map(axis => axis + jogStep).join(" ")
+                                var axisString = selectedAxis.map(axis => axis + SMOOTH_JOG_STEP).join(" ")
 
-                                socket.emit('write', options.port, "$J=G91 G21 " + axisString + " F"+ jogSpeed + ";\n")
+                                socket.emit('write', options.port, "$J=G91 G21 " + axisString + " F"+ currentJogSpeed + ";\n")
                             }
 
                             var stopSmoothJogging = function() {
                                 if(smoothJogInterval) {
                                     clearInterval(smoothJogInterval);
+                                    smoothJogLocked = true;
                                     smoothJogInterval = null;
 
                                     socket.emit('write', options.port, "\x85\n")
 
                                     console.log("smooth jogging stopped")
+
+                                    setTimeout(function() {
+                                        smoothJogLocked = false;
+                                    }, SMOOTH_JOG_STOP_DELAY);
                                 }
                             }
 
                             var startSmoothJogging = function(...selectedAxis) {
+                                if(smoothJogLocked) {
+                                    return;
+                                }
+
                                 stopSmoothJogging();
 
                                 smoothJog.apply(null, selectedAxis);
 
                                 smoothJogInterval = setInterval(function() {
                                     smoothJog.apply(null, selectedAxis);
-                                }, jogCommandInterval);
+                                }, SMOOTH_JOG_COMMAND_INTERVAL);
                             }
 
                             switch (currentDirection) {
                                 case "center":
-                                    if(smoothJogInterval) {
-                                        clearInterval(smoothJogInterval);
-                                        smoothJogInterval = null;
+                                    stopSmoothJogging();
+                                    break;
 
-                                        socket.emit('write', options.port, "\x85;\n")
-
-                                        console.log("smooth jogging stopped")
+                                case "north":
+                                    if(currentAxis == "xy") {
+                                        startSmoothJogging("Y")
+                                    } else {
+                                        startSmoothJogging("Z")
                                     }
 
                                     break;
 
-                                case "north":
-                                    startSmoothJogging("Y")
-                                    break;
-
                                 case "south":
-                                    startSmoothJogging("Y-")
+                                    if(currentAxis == "xy") {
+                                        startSmoothJogging("Y-")
+                                    } else {
+                                        startSmoothJogging("Z-")
+                                    }
+
                                     break;
 
                                 case "east":
-                                    startSmoothJogging("X")
+                                    if(currentAxis == "xy") {
+                                        startSmoothJogging("X")
+                                    } else {
+                                        stopSmoothJogging()
+                                    }
+
                                     break;
 
                                 case "west":
-                                    startSmoothJogging("X-")
+                                    if(currentAxis == "xy") {
+                                        startSmoothJogging("X-")
+                                    } else {
+                                        stopSmoothJogging()
+                                    }
+
                                     break;
 
                                 case "northeast":
-                                    startSmoothJogging("X", "Y")
+                                    if(currentAxis == "xy") {
+                                        startSmoothJogging("X", "Y")
+                                    } else {
+                                        stopSmoothJogging()
+                                    }
+
                                     break;
 
                                 case "northwest":
-                                    startSmoothJogging("X-", "Y")
+                                    if(currentAxis == "xy") {
+                                        startSmoothJogging("X-", "Y")
+                                    } else {
+                                        stopSmoothJogging()
+                                    }
+
                                     break;
 
                                 case "southeast":
-                                    startSmoothJogging("X", "Y-")
+                                    if(currentAxis == "xy") {
+                                        startSmoothJogging("X", "Y-")
+                                    } else {
+                                        stopSmoothJogging()
+                                    }
+
                                     break;
 
                                 case "southwest":
-                                    startSmoothJogging("X-", "Y-")
+                                    if(currentAxis == "xy") {
+                                        startSmoothJogging("X-", "Y-")
+                                    } else {
+                                        stopSmoothJogging()
+                                    }
+
                                     break;
 
                                 default:
                                     break;
                             }
-
                         } else {
                             var moveDistance = MOVE_DISTANCE;
 
