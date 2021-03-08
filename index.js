@@ -81,7 +81,7 @@ module.exports = function(options, callback) {
     });
 
     socket.on('serialport:read', function(data) {
-        console.log((data || '').trim());
+        console.log('SERIAL', (data || '').trim());
     });
 
     /*
