@@ -130,8 +130,10 @@ var createServer = function(options) {
         const SMOOTH_JOG_COMMAND_INTERVAL = 10; // period in ms at which the $J jogging commands are sent to the machine
         const MIN_SPEED = 1000;
         const MAX_SPEED = 10000;
-        let smoothJogEnabled = false;
+        let xySmoothJogEnabled = false;
+        let zSmoothJogEnabled = false;
         let currentDirection = null;
+        let currentRotation = 0;
         let currentThrow = 0;
         let currentAxis = null;
 
@@ -167,30 +169,47 @@ var createServer = function(options) {
         }
 
         setInterval(function() {
-            if(!smoothJogEnabled) {
-                return;
-            }
-
             if(waitingOnOK) {
                 console.log('skipping jog, waiting on OK');
                 return;
             }
 
-            // let v = currentSpeed / 60;
-            // let dt = 0.3;
-            // let step = v * dt;
-            // let step = (MAX_SPEED / 60.0) * (SMOOTH_JOG_COMMAND_INTERVAL / 1000.0) * 0.4;
-            // let step = (MAX_SPEED / 60.0) * (SMOOTH_JOG_COMMAND_INTERVAL / 1000.0) * 0.4;
+            if(xySmoothJogEnabled) {
+                // let v = currentSpeed / 60;
+                // let dt = 0.3;
+                // let step = v * dt;
+                // let step = (MAX_SPEED / 60.0) * (SMOOTH_JOG_COMMAND_INTERVAL / 1000.0) * 0.4;
+                // let step = (MAX_SPEED / 60.0) * (SMOOTH_JOG_COMMAND_INTERVAL / 1000.0) * 0.4;
 
-            let movement = getMovement(currentThrow);
-            let currentSpeed = movement.speed;
-            let step = movement.step;
+                let movement = getMovement(currentThrow);
+                let currentSpeed = movement.speed;
+                let step = movement.step;
 
-            var axisString = currentAxis.map(axis => axis + step).join(" ");
+                var axisString = currentAxis.map(axis => axis + step).join(" ");
 
-            console.log('smooth jog command', currentDirection, currentSpeed, currentAxis);
-            writeToCNC(`$J=G91 G21 ${axisString} F${currentSpeed}\n`);
-            waitingOnOK = true;
+                console.log('smooth jog command', currentDirection, currentSpeed, currentAxis);
+                writeToCNC(`$J=G91 G21 ${axisString} F${currentSpeed}\n`);
+                waitingOnOK = true;
+
+                return;
+            }
+
+            if(zSmoothJogEnabled) {
+                let currentSpeed = 1;
+                let step = 0.5;
+
+                var axis = "Z";
+
+                if(currentRotation < 0) {
+                    step = -step;
+                }
+
+                console.log('smooth jog command', currentDirection, currentSpeed, currentAxis);
+                writeToCNC(`$J=G91 G21 Z${step} F${currentSpeed}\n`);
+                waitingOnOK = true;
+
+                return;
+            }
         }, SMOOTH_JOG_COMMAND_INTERVAL);
 
         const parser = port.pipe(new Readline({ delimiter: '\n' }));
@@ -202,16 +221,48 @@ var createServer = function(options) {
             }
 
             currentDirection = payload.direction;
+            currentRotation = payload.rotation;
             currentThrow = payload.percent;
 
+            const ROTATION_THRESHOLD = 0.08
+
+            if(Math.abs(currentRotation) >= ROTATION_THRESHOLD) {
+                zSmoothJogEnabled = true;
+
+                return;
+            } else if(zSmoothJogEnabled) {
+                let stop = function() {
+                    console.log("smooth jogging stopped")
+                    zSmoothJogEnabled = false;
+                    writeToCNC("\x85");
+                }
+
+                if(!waitingOnOK) {
+                    stop()
+                } else {
+                    let interval = null;
+
+                    interval = setInterval(function() {
+                        if(waitingOnOK) {
+                            return;
+                        }
+
+                        clearInterval(interval)
+                        stop()
+                    }, 10)
+                }
+
+                return;
+            }
+
             var stopSmoothJogging = function() {
-                if(!smoothJogEnabled) {
+                if(!xySmoothJogEnabled) {
                     return;
                 }
 
                 let stop = function() {
                     console.log("smooth jogging stopped")
-                    smoothJogEnabled = false;
+                    xySmoothJogEnabled = false;
                     writeToCNC("\x85");
                 }
 
@@ -232,7 +283,7 @@ var createServer = function(options) {
             }
 
             var startSmoothJogging = function(...selectedAxis) {
-                smoothJogEnabled = true;
+                xySmoothJogEnabled = true;
                 currentAxis = selectedAxis;
             }
 

@@ -57,6 +57,7 @@ const MAX_SPEED = 10000;
 let smoothJogEnabled = false;
 let currentDirection = null;
 let currentAxis = null;
+let currentRotation = 0;
 let currentThrow = 0;
 
 function getMovement(joystickThrow) {
@@ -112,6 +113,8 @@ parser.on("data", function(data) {
     if(payload.direction === '') {
         return;
     }
+
+    console.log("rotation", payload.rotation);
 
     currentDirection = payload.direction;
     currentThrow = payload.percent;
