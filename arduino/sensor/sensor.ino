@@ -1,20 +1,22 @@
 #include <Coordinates.h>
 #include <AlignedJoy.h>
 
+#define PIN_BUTTON 3
 #define PIN_X  A1
 #define PIN_Y  A2
 #define PIN_Z  A0
 
-#define SCAN_INTERVAL 200
+#define SCAN_INTERVAL 100
 
 #define G_MIN 0
 #define G_MAX 1023
 #define G_MID G_MAX / 2
-#define G_MAX_R 723
-#define G_TOLERANCE 50
+#define G_MAX_R 512 // pot is actually square :\, so this is the max radius of X=0.
+#define G_R_TOLERANCE 50
 
 const float RAD_PER_SEG = M_PI / 8;
 
+int buttonVal = 0;
 int xVal = 0;
 int yVal = 0;
 int zVal = 0;
@@ -25,12 +27,14 @@ Coordinates point = Coordinates();
 AlignedJoy joystick_1(PIN_X, PIN_Y);
 
 void setup() {
+  pinMode(PIN_BUTTON, INPUT_PULLUP);
+
   Serial.begin(115200);
   while(!Serial){}
 }
 
-void printData(int y, float angle, float r) {
-  if(rVal < G_TOLERANCE) {
+void printData(int x, int y, int z, float angle, float r, int buttonVal) {
+  if(rVal < G_R_TOLERANCE) {
     Serial.print("CENTER");
   } else {
     if(angle < RAD_PER_SEG) {
@@ -58,14 +62,26 @@ void printData(int y, float angle, float r) {
   }
   
   Serial.print("|");
-  Serial.print(r / G_MAX_R);
-  
+  Serial.print(min(r / G_MAX_R, 1.0));
+
+  Serial.print("|");
+  Serial.print((z - G_MID)/float(G_MID));
+
+  Serial.print("|");
+  if(buttonVal == 0) {
+    Serial.print(1);
+  } else {
+    Serial.print(0);
+  }
+
   Serial.print("\n");
 }
 
 void loop() {
   xVal = joystick_1.read(X);
   yVal = joystick_1.read(Y);
+  zVal = analogRead(PIN_Z);
+  buttonVal = digitalRead(PIN_BUTTON);
 
   xVal = G_MID - xVal;
 
@@ -78,22 +94,7 @@ void loop() {
   point.fromCartesian(xVal, yVal);
   rVal = point.getR();
 
-
- 
-//  Serial.print("X -> ");
-//  Serial.print(xVal);
-//  
-//  Serial.print(" | Y -> ");
-//  Serial.print(yVal);
-//  
-//  Serial.print(" r: ");
-//  Serial.print(rVal);
-//
-//  Serial.print(" φ: ");
-//  Serial.print(point.getAngle());
-//  Serial.print(" rad ");
-
-  printData(yVal, point.getAngle(), rVal);
+  printData(xVal, yVal, zVal, point.getAngle(), rVal, buttonVal);
 
 END:
   delay(SCAN_INTERVAL);
