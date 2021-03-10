@@ -1,0 +1,350 @@
+#!/usr/bin/env node
+
+var fs = require('fs');
+var path = require('path');
+var program = require('commander');
+var serialport = require('serialport');
+const Readline = require('@serialport/parser-readline');
+var inquirer = require('inquirer');
+
+var pkg = require('../package.json');
+var serverMain = require('../index');
+
+var options = {};
+
+program
+	.version(pkg.version)
+	.usage('-s <secret> -p <port> [options]')
+	.option('-l, --list', 'list available ports then exit')
+	.option('-j, --joystick <device>', 'joystick')
+    .option('-s, --secret', 'the secret key stored in the ~/.cncrc file')
+	.option('-p, --port <port>', 'path or name of serial port')
+	.option('-b, --baudrate <baudrate>', 'baud rate (default: 115200)', 115200)
+	.option('--socket-address <address>', 'socket address or hostname (default: localhost)', 'localhost')
+	.option('--socket-port <port>', 'socket port (default: 8000)', 8000)
+	.option('--controller-type <type>', 'controller type: Grbl|Smoothie|TinyG (default: Grbl)', 'Grbl')
+    .option('--access-token-lifetime <lifetime>', 'access token lifetime in seconds or a time span string (default: 30d)', '30d')
+
+program.parse(process.argv);
+
+var options = {
+    joystick: program.joystick,
+    secret: program.secret,
+    port: program.port,
+    baudrate: program.baudrate,
+    socketAddress: program.socketAddress,
+    socketPort: program.socketPort,
+    controllerType: program.controllerType,
+    accessTokenLifetime: program.accessTokenLifetime
+};
+
+var Directions = {
+    Center: "CENTER",
+    North: "NORTH",
+    NorthEast: "NORTHEAST",
+    NorthWest: "NORTHWEST",
+    South: "SOUTH",
+    SouthEast: "SOUTHEAST",
+    SouthWest: "SOUTHWEST",
+    East: "EAST",
+    West: "WEST",
+}
+
+if (options.list) {
+	serialport.list().then(function(ports) {
+		ports.forEach(function(port) {
+			console.log(port.path);
+		});
+	}).catch((err) => {
+        console.error(err)
+        process.exit(1)
+    })
+	return;
+}
+
+var store = {
+    controller: {
+        state: {},
+        settings: {}
+    },
+    sender: {
+        status: {}
+    }
+};
+
+function getPayload(controllerData) {
+    let line = controllerData.toString('utf-8').replace(/(\r\n|\n|\r)/gm, "");
+    let parts = line.split('|');
+
+    return {
+        direction: parts[0],
+        percent: Number(parts[1]),
+    }
+}
+
+var createServer = function(options) {
+    serverMain(options, function(err, socket) {
+        // Grbl
+        socket.on('Grbl:state', function(state) {
+            store.controller.state = state;
+        });
+        socket.on('Grbl:settings', function(settings) {
+            store.controller.settings = settings;
+        });
+
+        // Smoothie
+        socket.on('Smoothie:state', function(state) {
+            store.controller.state = state;
+        });
+        socket.on('Smoothie:settings', function(settings) {
+            store.controller.settings = settings;
+        });
+
+        // TinyG
+        socket.on('TinyG:state', function(state) {
+            store.controller.state = state;
+        });
+        socket.on('TinyG:settings', function(settings) {
+            store.controller.settings = settings;
+        });
+
+        // Sender
+        socket.on('sender:status', function(data) {
+            store.sender.status = data;
+        });
+
+        console.log('waiting on joystick', options.joystick);
+
+        const port = new serialport(options.joystick, { autoOpen: false })
+
+        port.open(function (err) {
+            if (err) {
+                return console.log('Error opening port: ', err.message)
+            }
+
+            console.log('joystick opened');
+            console.log('waiting on joystick data');
+        })
+
+        const DEBOUNCE_MS = 100;
+        const MOVE_DISTANCE = 15;
+        const SMOOTH = true;
+        const SMOOTH_JOG_SPEED_X = 500; // MM/min
+        const SMOOTH_JOG_SPEED_X10 = 100; // MM/min
+        const SMOOTH_JOG_SPEED_X100 = 1000; // MM/min
+        const SMOOTH_JOG_SPEED_X1000 = 10000; // MM/min
+        const SMOOTH_JOG_STEP = 50; // Unit step for continuous jog in MM
+        const SMOOTH_JOG_COMMAND_INTERVAL = 15; // period in ms at which the $J jogging commands are sent to the machine
+        const SMOOTH_JOG_STOP_DELAY = 500;
+
+        var currentDirection = null;
+        var currentJogSpeed = SMOOTH_JOG_SPEED_X10;
+        var debounceTimeout = null;
+        var smoothJogInterval = null;
+        var smoothJogLocked = false;
+
+        var waitingOnOK = false;
+
+        socket.on('serialport:read', function(data) {
+            data = data.trim();
+
+            if(data === 'ok' && waitingOnOK) {
+                console.log('clearing OK');
+                waitingOnOK = false;
+                smoothJogLocked = false;
+            }
+        });
+
+        var writeToCNC = function(data) {
+            console.log('GCODE', data.replace(/\r\n|\r|\n/gm, ""));
+            socket.emit('write', options.port, data);
+        }
+
+        const parser = port.pipe(new Readline({ delimiter: '\n' }))
+
+        parser.on("data", function(data) {
+            var payload = getPayload(data);
+            if(payload.direction === '') {
+                return;
+            }
+
+            let newDirection = payload.direction;
+            let jogSpeed = (payload.percent * (10000 - 500)) + 500
+
+            if(newDirection !== currentDirection) {
+                currentDirection = newDirection
+
+                if(debounceTimeout == null) {
+                    debounceTimeout = setTimeout(function() {
+                        if(SMOOTH) {
+                            var smoothJog = function(...selectedAxis) {
+                                if(waitingOnOK) {
+                                    console.log('skipping jog, waiting on OK');
+                                    return;
+                                }
+
+                                if(smoothJogLocked) {
+                                    console.log('skipping jog, locked');
+                                    return;
+                                }
+
+                                let v = jogSpeed / 60;
+                                let dt = 0.3;
+                                let step = v * dt;
+
+                                var axisString = selectedAxis.map(axis => axis + step).join(" ");
+
+                                console.log('smooth jog command', payload);
+                                writeToCNC(`$J=G91 G21 ${axisString} F${jogSpeed}\n`);
+                                waitingOnOK = true;
+                            }
+
+                            var stopSmoothJogging = function() {
+                                if(smoothJogInterval) {
+                                    smoothJogLocked = true;
+                                    clearInterval(smoothJogInterval);
+                                    smoothJogInterval = null;
+
+                                    writeToCNC("\x85");
+
+                                    waitingOnOK = true;
+                                    writeToCNC("G4P0;\n");
+
+                                    console.log("smooth jogging stopped")
+
+                                    // setTimeout(function() {
+                                    //     // TODO: this is fucked
+                                    //     console.log('unlocking smooth jogging');
+                                    // }, SMOOTH_JOG_STOP_DELAY);
+                                }
+                            }
+
+                            var startSmoothJogging = function(...selectedAxis) {
+                                if(smoothJogLocked) {
+                                    return;
+                                }
+
+                                stopSmoothJogging();
+
+                                smoothJog.apply(null, selectedAxis);
+
+                                smoothJogInterval = setInterval(function() {
+                                    smoothJog.apply(null, selectedAxis);
+                                }, SMOOTH_JOG_COMMAND_INTERVAL);
+                            }
+
+                            switch (currentDirection) {
+                                case Directions.Center:
+                                    stopSmoothJogging();
+                                    break;
+
+                                case Directions.North:
+                                    startSmoothJogging("Y")
+                                    break;
+
+                                case Directions.South:
+                                    startSmoothJogging("Y-")
+                                    break;
+
+                                case Directions.East:
+                                    startSmoothJogging("X")
+                                    break;
+
+                                case Directions.West:
+                                    startSmoothJogging("X-")
+                                    break;
+
+                                case Directions.NorthEast:
+                                    startSmoothJogging("X", "Y")
+                                    break;
+
+                                case Directions.NorthWest:
+                                    startSmoothJogging("X-", "Y")
+                                    break;
+
+                                case Directions.SouthEast:
+                                    startSmoothJogging("X", "Y-")
+                                    break;
+
+                                case Directions.SouthWest:
+                                    startSmoothJogging("X-", "Y-")
+                                    break;
+
+                                default:
+                                    break;
+                            }
+                        } else {
+                            var moveDistance = MOVE_DISTANCE;
+
+                            console.log("moving", currentDirection, moveDistance, payload);
+
+                            switch (currentDirection) {
+                                case Directions.North:
+                                    writeToCNC(`G91 Y${moveDistance};\n`)
+                                    break;
+
+                                case Directions.South:
+                                    writeToCNC(`G91 Y-${moveDistance};\n`)
+                                    break;
+
+                                case Directions.East:
+                                    writeToCNC(`G91 X${moveDistance};\n`)
+                                    break;
+
+                                case Directions.West:
+                                    writeToCNC(`G91 X-${moveDistance};\n`)
+                                    break;
+
+                                case Directions.NorthEast:
+                                    writeToCNC(`G91 X${moveDistance} Y${moveDistance};\n`)
+                                    break;
+
+                                case Directions.NorthWest:
+                                    writeToCNC(`G91 X-${moveDistance} Y${moveDistance};\n`)
+                                    break;
+
+                                case Directions.SouthEast:
+                                    writeToCNC(`G91 X${moveDistance} Y-${moveDistance};\n`)
+                                    break;
+
+                                case Directions.SouthWest:
+                                    writeToCNC(`G91 X-${moveDistance} Y-${moveDistance};\n`)
+                                    break;
+
+                                default:
+                                    break;
+                            }
+                        }
+
+                        debounceTimeout = null;
+                    }, DEBOUNCE_MS)
+                }
+            }
+        });
+    });
+};
+
+if (options.port) {
+    createServer(options);
+    return;
+}
+
+serialport.list().then(function (ports) {
+    const choices = ports.map(function(port) {
+        return port.path;
+    });
+
+    inquirer.prompt([{
+        type: 'list',
+        name: 'port',
+        message: 'Specify which port you want to use?',
+        choices: choices
+    }]).then(function(answers) {
+        options.port = answers.port;
+
+        createServer(options);
+    });
+}).catch((err) => {
+    console.error(err)
+    process.exit(1)
+})

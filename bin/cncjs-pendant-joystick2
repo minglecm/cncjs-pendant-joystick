@@ -79,6 +79,8 @@ function getPayload(controllerData) {
     return {
         direction: parts[0],
         percent: Number(parts[1]),
+        rotation: Number(parts[2]),
+        button: Boolean(parts[3]),
     }
 }
 
@@ -125,13 +127,44 @@ var createServer = function(options) {
             socket.emit('write', options.port, data);
         }
 
-        const SMOOTH_JOG_COMMAND_INTERVAL = 15; // period in ms at which the $J jogging commands are sent to the machine
+        const SMOOTH_JOG_COMMAND_INTERVAL = 10; // period in ms at which the $J jogging commands are sent to the machine
         const MIN_SPEED = 1000;
         const MAX_SPEED = 10000;
         let smoothJogEnabled = false;
         let currentDirection = null;
-        let currentSpeed = MIN_SPEED;
+        let currentThrow = 0;
         let currentAxis = null;
+
+        function getMovement(joystickThrow) {
+            let speed = 0;
+            let step = 0;
+
+            const windows = [
+                {t: 0.2, speed: 1000, step: 0.5},
+                {t: 0.3, speed: 2000, step: 0.75},
+                {t: 0.4, speed: 2500, step: 1},
+                {t: 0.5, speed: 3500, step: 1.5},
+                {t: 0.6, speed: 4500, step: 1.5},
+                {t: 0.7, speed: 5500, step: 1.5},
+                {t: 0.8, speed: 6500, step: 1.75},
+                {t: 0.9, speed: 7500, step: 2},
+                {t: 1, speed: 8000, step: 2},
+            ];
+
+            for(const window of windows) {
+                if(joystickThrow <= window.t) {
+                    return {
+                        speed: window.speed,
+                        step: window.step,
+                    }
+                }
+            }
+
+            return {
+                speed: 0,
+                step: 0,
+            }
+        }
 
         setInterval(function() {
             if(!smoothJogEnabled) {
@@ -146,7 +179,12 @@ var createServer = function(options) {
             // let v = currentSpeed / 60;
             // let dt = 0.3;
             // let step = v * dt;
-            let step = (MAX_SPEED / 60.0) * (SMOOTH_JOG_COMMAND_INTERVAL / 1000.0) * 1.2;
+            // let step = (MAX_SPEED / 60.0) * (SMOOTH_JOG_COMMAND_INTERVAL / 1000.0) * 0.4;
+            // let step = (MAX_SPEED / 60.0) * (SMOOTH_JOG_COMMAND_INTERVAL / 1000.0) * 0.4;
+
+            let movement = getMovement(currentThrow);
+            let currentSpeed = movement.speed;
+            let step = movement.step;
 
             var axisString = currentAxis.map(axis => axis + step).join(" ");
 
@@ -163,8 +201,8 @@ var createServer = function(options) {
                 return;
             }
 
-            currentDirection = payload.direction
-            currentSpeed = (payload.percent * (MAX_SPEED - MIN_SPEED)) + MIN_SPEED
+            currentDirection = payload.direction;
+            currentThrow = payload.percent;
 
             var stopSmoothJogging = function() {
                 if(!smoothJogEnabled) {
@@ -191,9 +229,6 @@ var createServer = function(options) {
                         stop()
                     }, 10)
                 }
-
-                // waitingOnOK = true;
-                // writeToCNC("G4P0;\n");
             }
 
             var startSmoothJogging = function(...selectedAxis) {
