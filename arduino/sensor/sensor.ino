@@ -1,10 +1,10 @@
 #include <Coordinates.h>
 #include <AlignedJoy.h>
 
-#define PIN_BUTTON 3
-#define PIN_X  A1
-#define PIN_Y  A2
-#define PIN_Z  A0
+#define PIN_BUTTON 14
+#define PIN_X  A0
+#define PIN_Y  A1
+#define PIN_Z  A2
 
 #define SCAN_INTERVAL 100
 

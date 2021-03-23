@@ -8,8 +8,8 @@
 
 // PINs DEFINITION
 // joystick 1
-#define PIN_JOY1_X   A1  //(up  down)
-#define PIN_JOY1_Y   A2  //(left  right)
+#define PIN_JOY1_X   A0  //(up  down)
+#define PIN_JOY1_Y   A1  //(left  right)
 
 // TIMERs DEFINITION
 // joystick calibration
