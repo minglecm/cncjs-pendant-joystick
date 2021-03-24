@@ -1,5 +1,5 @@
-// const SMOOTH_JOG_COMMAND_INTERVAL = 10; // period in ms at which the $J jogging commands are sent to the machine
-const SMOOTH_JOG_COMMAND_INTERVAL = 100; // period in ms at which the $J jogging commands are sent to the machine
+const SMOOTH_JOG_COMMAND_INTERVAL = 10; // period in ms at which the $J jogging commands are sent to the machine
+// const SMOOTH_JOG_COMMAND_INTERVAL = 100; // period in ms at which the $J jogging commands are sent to the machine
 const MIN_SPEED = 1000;
 const MAX_SPEED = 10000;
 
@@ -175,10 +175,10 @@ const GetMovementXY = (joystickThrow) => {
         {t: 0.4, speed: 2500, step: 1},
         {t: 0.5, speed: 3500, step: 1.5},
         {t: 0.6, speed: 4500, step: 1.5},
-        {t: 0.7, speed: 5500, step: 1.5},
-        {t: 0.8, speed: 6500, step: 1.75},
-        {t: 0.9, speed: 7500, step: 2},
-        {t: 1, speed: 8000, step: 2},
+        {t: 0.7, speed: 5500, step: 2},
+        {t: 0.8, speed: 6500, step: 2.5},
+        {t: 0.9, speed: 7500, step: 3},
+        {t: 1, speed: 8000, step: 3.5},
     ];
 
     for(const window of windows) {

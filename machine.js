@@ -6,10 +6,10 @@ class Machine {
             waitingOnOK: false,
         };
 
-        this.socket.on('serialport:read', function(data) {
+        this.socket.on('serialport:read', (data) => {
             data = data.trim();
 
-            if(data === 'ok' && this.waitingOnOK) {
+            if(data === 'ok' && this.state.waitingOnOK) {
                 console.log('waitingOnOK=false');
 
                 this.state.waitingOnOK = false;
