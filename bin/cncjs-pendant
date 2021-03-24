@@ -9,6 +9,9 @@ var inquirer = require('inquirer');
 
 var pkg = require('../package.json');
 var serverMain = require('../index');
+var joystick = require('../joystick');
+var mpg = require('../mpg');
+var Machine = require('../machine');
 
 var options = {};
 
@@ -78,6 +81,32 @@ const COMMAND_MPG_CLICK = "MC";
 const COMMAND_ON = "on";
 const COMMAND_UNKNOWN = "UNKNOWN";
 
+function joystickDataPayload(parts) {
+    let direction = parts[1];
+    let throwPercent = parts[3]; // [0, 100]
+    let rotation = parts[4]; // [-1, 1]
+
+    return {
+        command: COMMAND_JOYSTICK_DATA,
+        direction,
+        rotation,
+        throwPercent,
+    };
+}
+
+function mpgClickPayload(parts) {
+    let clicks = Number(parts[1]);
+    let axis = parts[2];
+    let distance = Number(parts[3]);
+
+    return {
+        command: COMMAND_MPG_CLICK,
+        axis,
+        clicks,
+        distance,
+    };
+}
+
 function getPayload(controllerData) {
     let line = controllerData.toString('utf-8').replace(/(\r\n|\n|\r)/gm, "");
     let parts = line.split('|');
@@ -87,17 +116,11 @@ function getPayload(controllerData) {
     let command = parts.length ? parts[0] : COMMAND_UNKNOWN;
 
     switch(command) {
-        case COMMAND_MPG_CLICK:
-            let clicks = Number(parts[1]);
-            let axis = parts[2];
-            let distance = Number(parts[3]);
+        case COMMAND_JOYSTICK_DATA:
+            return joystickDataPayload(parts);
 
-            return {
-                command,
-                axis,
-                clicks,
-                distance,
-            }
+        case COMMAND_MPG_CLICK:
+            return mpgClickPayload(parts);
 
         default:
             return { command };
@@ -129,29 +152,16 @@ var createServer = function(options) {
 
             console.log('device opened');
             console.log('waiting on data');
-        })
-
-        var waitingOnOK = false;
-
-        socket.on('serialport:read', function(data) {
-            data = data.trim();
-
-            if(data === 'ok' && waitingOnOK) {
-                console.log('waitingOnOK=false');
-                waitingOnOK = false;
-            }
         });
 
-        var writeToCNC = function(data) {
-            console.log('GCODE', data.replace(/\r\n|\r|\n/gm, ""));
-            socket.emit('write', options.port, data);
-        }
+        let machine = new Machine(socket, options.port);
+        let joystickController = new joystick.Controller(machine);
+        let mpgController = new mpg.Controller(machine);
 
         const parser = port.pipe(new Readline({ delimiter: '\n' }));
 
         parser.on("data", function(data) {
             var payload = getPayload(data);
-            // console.log(payload);
 
             switch(payload.command) {
                 case COMMAND_JOYSTICK_BUTTON:
@@ -159,15 +169,14 @@ var createServer = function(options) {
                     break;
 
                 case COMMAND_JOYSTICK_DATA:
-                    console.log("joystick data", payload);
+                    joystickController.updateState(payload);
+                    // joystickController.printState();
+
                     break;
 
                 case COMMAND_MPG_CLICK:
-                    if(payload.clicks > 0) {
-                        writeToCNC(`G91 ${payload.axis}${payload.distance}\n`);
-                    } else {
-                        writeToCNC(`G91 ${payload.axis}-${payload.distance}\n`);
-                    }
+                    mpgController.updateState(payload);
+                    // mpgController.printState();
 
                     break;
             }
