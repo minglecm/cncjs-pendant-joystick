@@ -2,6 +2,7 @@ const SMOOTH_JOG_COMMAND_INTERVAL = 10; // period in ms at which the $J jogging 
 // const SMOOTH_JOG_COMMAND_INTERVAL = 100; // period in ms at which the $J jogging commands are sent to the machine
 const MIN_SPEED = 1000;
 const MAX_SPEED = 10000;
+const ROTATION_THRESHOLD = 0.1
 
 const Directions = {
     Center: "CENTER",
@@ -34,6 +35,14 @@ class Controller {
         this.state.direction = direction;
         this.state.rotation = rotation;
         this.state.throwPercent = throwPercent;
+
+        if(Math.abs(this.state.rotation) >= ROTATION_THRESHOLD) {
+            this.startSmoothJogging("Z");
+
+            return;
+        } else if(this.isSmoothJoggingZ) {
+            this.stopSmoothJogging();
+        }
 
         switch(this.state.direction) {
             case Directions.Center:
@@ -82,6 +91,10 @@ class Controller {
         return Boolean(this.state.jog);
     }
 
+    get isSmoothJoggingZ() {
+        return this.isSmoothJogging && this.state.jog.axis.includes("Z");
+    }
+
     startSmoothJogging(...selectedAxis) {
         if(this.state.jog) {
             this.state.jog.axis = selectedAxis;
@@ -111,7 +124,15 @@ class Controller {
                 return;
             }
 
-            this.machine.writeToCNC(GetJogCommandXY(this.state.jog.axis, this.state.throwPercent));
+            let jogCommand = "";
+
+            if(this.isSmoothJoggingZ) {
+                jogCommand = GetJogCommandZ(this.state.rotation);
+            } else {
+                jogCommand = GetJogCommandXY(this.state.jog.axis, this.state.throwPercent);
+            }
+
+            this.machine.writeToCNC(jogCommand);
             this.machine.waitOnOK();
         }, SMOOTH_JOG_COMMAND_INTERVAL);
     }
@@ -163,8 +184,6 @@ const GetJogCommandXY = (axis, joystickThrow) => {
 
     var axisString = axis.map(a => a + step).join(" ");
 
-    // console.log('smooth jog command', currentDirection, currentSpeed, currentAxis);
-
     return `$J=G91 G21 ${axisString} F${currentSpeed}\n`;
 };
 
@@ -194,6 +213,19 @@ const GetMovementXY = (joystickThrow) => {
         speed: 0,
         step: 0,
     }
+};
+
+const GetJogCommandZ = (rotation) => {
+    var movement = GetMovementZ(Math.abs(rotation));
+    let currentSpeed = movement.speed;
+    let step = movement.step;
+
+    console.log('fooo', rotation);
+    if(rotation < 0) {
+        step = -step;
+    }
+
+    return `$J=G91 G21 Z${step} F${currentSpeed}\n`;
 };
 
 const GetMovementZ = (joystickRotation) => {
