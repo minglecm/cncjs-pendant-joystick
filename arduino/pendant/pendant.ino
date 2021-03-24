@@ -329,7 +329,7 @@ void handleMPG() {
   }
 
   if(oldEncPos != encoderPos) {
-    Serial.print("M|");
+    Serial.print("MC|");
     Serial.print(encoderPos - oldEncPos);
     Serial.print("|" + getAxisLabel());
     Serial.print("|" + String(getDistance(), 3));
