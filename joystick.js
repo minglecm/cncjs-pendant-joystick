@@ -183,6 +183,11 @@ const GetJogCommandXY = (axis, joystickThrow) => {
     let currentSpeed = movement.speed;
     let step = movement.step;
 
+    let v = currentSpeed / 60;
+    const accel = 500; // mm/sec^2
+    let dt = v / (2 * accel * 10);
+    step = v * dt;
+
     var axisString = axis.map(a => a + step).join(" ");
 
     return `$J=G91 G21 ${axisString} F${currentSpeed}\n`;
