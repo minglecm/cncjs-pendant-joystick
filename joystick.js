@@ -150,7 +150,8 @@ class Controller {
 
         let writeToMachine = () => {
             console.log("STOPPED SMOOTH JOGGING");
-            this.machine.writeToCNC(GetJogCancelCommand())
+            // this.machine.writeToCNC(GetJogCancelCommand());
+            this.machine.jogCancel();
         };
 
         if(!this.machine.waitingOnOK) {

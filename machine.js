@@ -27,6 +27,12 @@ class Machine {
         this.state.waitingOnOK = true;
     }
 
+    jogCancel() {
+        console.log('COMMAND', 'jogCancel');
+
+        this.socket.emit('jogCancel');
+    }
+
     writeToCNC(gcode) {
         let dataToDisplay = gcode.trim()
 
