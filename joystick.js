@@ -226,7 +226,6 @@ const GetJogCommandZ = (rotation) => {
     let currentSpeed = movement.speed;
     let step = movement.step;
 
-    console.log('fooo', rotation);
     if(rotation < 0) {
         step = -step;
     }
