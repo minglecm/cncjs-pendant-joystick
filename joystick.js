@@ -179,13 +179,19 @@ const GetJogCancelCommand = () => {
 }
 
 const GetJogCommandXY = (axis, joystickThrow) => {
+    // GOD THIS IS A MESSSSSSSSSS
+    // i need to clean this up, this was hacked together at the cnc
+
     let movement = GetMovementXY(joystickThrow);
     let currentSpeed = movement.speed;
     let step = movement.step;
 
+    currentSpeed = MAX_SPEED * joystickThrow;
+
     let v = currentSpeed / 60;
-    const accel = 500; // mm/sec^2
-    let dt = v / (2 * accel * 10);
+    const accel = 300; // mm/sec^2
+    let dt = (MAX_SPEED/60) / (2 * accel * 14);
+
     step = v * dt;
 
     var axisString = axis.map(a => a + step).join(" ");
