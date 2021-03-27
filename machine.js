@@ -10,8 +10,6 @@ class Machine {
             data = data.trim();
 
             if(data === 'ok' && this.state.waitingOnOK) {
-                console.log('waitingOnOK=false');
-
                 this.state.waitingOnOK = false;
             }
         });
@@ -30,7 +28,14 @@ class Machine {
     }
 
     writeToCNC(gcode) {
-        console.log('GCODE', gcode.replace(/\r\n|\r|\n/gm, ""));
+        let dataToDisplay = gcode.trim()
+
+        dataToDisplay = dataToDisplay.replace(/[^\x20-\x7E]/g, (m) => {
+            return '\\x' + m.charCodeAt(0).toString(16);
+        });
+
+        console.log('GCODE', dataToDisplay);
+
         this.socket.emit('write', this.port, gcode);
     }
 }
